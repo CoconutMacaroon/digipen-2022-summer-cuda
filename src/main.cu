@@ -1,65 +1,4 @@
-#include <iostream>
-#include <float.h>
-
-const short LIGHT_TYPE_AMBIENT = 1;
-const short LIGHT_TYPE_POINT = 2;
-const short LIGHT_TYPE_DIRECTIONAL = 3;
-
-#define LENGTH(n) (sqrt(dot(n, n)))
-
-#define ARR_LEN(a) (sizeof(a) / sizeof(a[0]))
-#define ROUND_COLOR(c) (round(c) > 255.0 ? 255 : (byte) round(c))
-
-typedef unsigned char byte;
-
-typedef struct Color {
-    int r, g, b;
-} Color;
-
-typedef struct Sphere {
-    double radius;
-    double center[3];
-    Color color;
-    double specular;
-    double reflectiveness;
-} Sphere;
-
-typedef struct IntersectionData {
-    Sphere sphere;
-    double closest_t;
-    bool isSphereNull;
-} IntersectionData;
-
-typedef struct Light {
-    short lightType;
-    double intensity;
-    double position[3];
-    double direction[3];
-} Light;
-
-__device__ const short CANVAS_WIDTH = 1024, CANVAS_HEIGHT = 1024;
-
-__device__ double D = 1;
-// TODO: I may need to swap CANVAS_WIDTH and CANVAS_HEIGHT
-//       in this division if CANVAS_HEIGHT > CANVAS_WIDTH
-__device__ double VIEWPORT_WIDTH = (double) CANVAS_WIDTH / (double) CANVAS_HEIGHT;
-__device__ double VIEWPORT_HEIGHT = 1;
-__device__ double inf = DBL_MAX;
-__device__ double cameraPosition[] = {0, 0, 0};
-
-__device__ Sphere spheres[] = {
-        {.radius = 1.0, .center = {-2, 0, 4}, .color = {0, 255, 0}, .specular = 500, .reflectiveness = 0.2},
-        {.radius = 1.0, .center = {2, 0, 4}, .color = {0, 0, 255}, .specular = 500, .reflectiveness = 0.3},
-        {.radius = 1.0, .center = {0, -1, 3}, .color = {255, 0, 0}, .specular = 10, .reflectiveness = 0.4},
-        {.radius = 5000, .center = {0, -5001, 0}, .color = {255, 255, 0}, .specular = 1000, .reflectiveness = 0.5}};
-
-
-__device__ Light lights[] = {
-        (Light) {.lightType=LIGHT_TYPE_AMBIENT, .intensity=0.2, .position={}, .direction={}},
-        (Light) {.lightType=LIGHT_TYPE_POINT, .intensity=0.6, .position={2.0, 1.0, 0.0}, .direction={}},
-        (Light) {.lightType=LIGHT_TYPE_DIRECTIONAL, .intensity=0.2f, .position={}, .direction={1.0, 4.0, 4.0}
-        }
-};
+#include "main.h"
 
 __device__ double dot(double *x, double *y) {
     return x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
@@ -133,8 +72,7 @@ __device__ void intersectRaySphere(double cameraPos[], double d[], Sphere sphere
 }
 
 
-__device__ IntersectionData
-closestIntersection(double cameraPos[], double d[], double t_min, double t_max) {
+__device__ IntersectionData closestIntersection(double cameraPos[], double d[], double t_min, double t_max) {
     double closest_t = DBL_MAX;
     Sphere closestSphere;
     bool isNull = true;
@@ -209,12 +147,11 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
     return intensity;
 }
 
-__device__ Color
+__device__ byte roundRGBValue(double n) {
+    return round(n) > 255.0 ? 255 : (byte) round(n);
+}
 
-traceRay(double cameraPos[3],
-         double d[],
-         double min_t,
-         double max_t, int recursion_depth) {
+__device__ Color traceRay(double cameraPos[3], double d[], double min_t, double max_t, int recursion_depth) {
     IntersectionData intersectionData = closestIntersection(cameraPos, d, min_t, max_t);
     if (intersectionData.isSphereNull) {
         // this is the background color
@@ -237,11 +174,9 @@ traceRay(double cameraPos[3],
     multiply(-1.0, d, tmp3);
 
     double lighting = computeLighting(P, N, tmp3, intersectionData.sphere.specular);
-    Color localColor = {
-            ROUND_COLOR(intersectionData.sphere.color.r * lighting),
-            ROUND_COLOR(intersectionData.sphere.color.g * lighting),
-            ROUND_COLOR(intersectionData.sphere.color.b * lighting)
-    };
+    Color localColor = {roundRGBValue(intersectionData.sphere.color.r * lighting),
+                        roundRGBValue(intersectionData.sphere.color.g * lighting),
+                        roundRGBValue(intersectionData.sphere.color.b * lighting)};
     double r = intersectionData.sphere.reflectiveness;
     if (recursion_depth <= 0 || r <= 0) {
         return localColor;
@@ -253,11 +188,9 @@ traceRay(double cameraPos[3],
     reflectRay(temp, N2, R);
 
     Color reflectedColor = traceRay(P, R, 0.001, inf, recursion_depth - 1);
-    return (Color) {
-            ROUND_COLOR(localColor.r * (1 - r) + reflectedColor.r * r),
-            ROUND_COLOR(localColor.g * (1 - r) + reflectedColor.g * r),
-            ROUND_COLOR(localColor.b * (1 - r) + reflectedColor.b * r)
-    };
+    return (Color) {roundRGBValue(localColor.r * (1 - r) + reflectedColor.r * r),
+                    roundRGBValue(localColor.g * (1 - r) + reflectedColor.g * r),
+                    roundRGBValue(localColor.b * (1 - r) + reflectedColor.b * r)};
 }
 
 __device__ void putPixel(int x, int y, Color color) {
@@ -302,30 +235,34 @@ __global__ void doIt(Pixel *pixels) {
 }
 
 int main(void) {
-    Pixel *pixels;
-    cudaMallocManaged(&pixels, (size_t) CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel));
+    Pixel *pixels = (Pixel *) malloc((size_t) CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel));
+
     size_t counter = 0;
+
+    // TODO: in theory the index could be x * CANVAS_WIDTH + y
+    // need to test that
+
     for (short x = 0; x < CANVAS_WIDTH; ++x) {
         for (short y = 0; y < CANVAS_HEIGHT; ++y) {
             pixels[counter++] = (Pixel) {.x = x, .y = y};
         }
     }
 
-    int blockSize = 256;
-    int numBlocks = (CANVAS_WIDTH * CANVAS_HEIGHT + blockSize - 1) / blockSize;
-    printf("Number of blocks: %d, block size: %d\n", numBlocks, blockSize);
 
-    /*
-     *   // Prefetch the data to the GPU
-  int device = -1;
-  cudaGetDevice(&device);
-  cudaMemPrefetchAsync(x, N*sizeof(float), device, NULL);
-     */
+    // make a pointer for the copy of the pixels on
+    // the GPU, and copy the pixels into that array
+    Pixel *device_pixels;
 
-    int device = -1;
-    cudaGetDevice(&device);
-    cudaMemPrefetchAsync(pixels, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel), device, NULL);
-    doIt<<<numBlocks, blockSize>>>(pixels);
-    cudaFree(pixels);
-    return 0;
+    cudaMalloc(&device_pixels, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel));
+
+    cudaMemcpy(device_pixels, pixels, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel), cudaMemcpyHostToDevice);
+
+    // run the kernel
+    doIt<<<(CANVAS_WIDTH * CANVAS_HEIGHT + 256 - 1) / 256, 256>>>(device_pixels);
+    cudaDeviceSynchronize();
+
+    free(pixels);
+    cudaFree(device_pixels);
+
+    return EXIT_SUCCESS;
 }
