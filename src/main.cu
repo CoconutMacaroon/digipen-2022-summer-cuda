@@ -4,14 +4,6 @@ __device__ double dot(double *x, double *y) {
     return x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
 }
 
-// function to add the elements of two arrays
-__device__ void add(int n, double *x, double *y, double *z) {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-    for (int i = index; i < n; i += stride)
-        z[i] = x[i] + y[i];
-}
-
 __device__ void add(double *a, double *b, double *resultLocation) {
     resultLocation[0] = a[0] + b[0];
     resultLocation[1] = a[1] + b[1];
@@ -194,22 +186,11 @@ __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double 
 }
 
 __device__ void putPixel(int x, int y, Color color) {
-    /*x = CANVAS_WIDTH / 2 + x;
-    y = CANVAS_HEIGHT / 2 - y - 1;*/
+    x = CANVAS_WIDTH / 2 + x;
+    y = CANVAS_HEIGHT / 2 - y - 1;
     if (x < 0 || x >= CANVAS_WIDTH || y < 0 || y >= CANVAS_HEIGHT) {
         return;
     }
-    /*
-    fputc((byte) x, image);
-    fputc((byte) (x >> 8), image);
-
-    fputc((byte) y, image);
-    fputc((byte) (y >> 8), image);
-
-    fputc(color.r, image);
-    fputc(color.g, image);
-    fputc(color.b, image);
-    */
 }
 
 __device__ void renderPixel(int x, int y) {
