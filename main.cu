@@ -37,7 +37,7 @@ typedef struct Light {
     double direction[3];
 } Light;
 
-__device__ const short CANVAS_WIDTH = 1500, CANVAS_HEIGHT = 1500;
+__device__ const short CANVAS_WIDTH = 1024, CANVAS_HEIGHT = 1024;
 
 __device__ double D = 1;
 // TODO: I may need to swap CANVAS_WIDTH and CANVAS_HEIGHT
@@ -48,16 +48,17 @@ __device__ double inf = DBL_MAX;
 __device__ double cameraPosition[] = {0, 0, 0};
 
 __device__ Sphere spheres[] = {
-        {.radius = 1.0f, .center = {-2, 0, 4}, .color = {0, 255, 0}, .specular = 500, .reflectiveness = 0.2f},
-        {.radius = 1.0f, .center = {2, 0, 4}, .color = {0, 0, 255}, .specular = 500, .reflectiveness = 0.3f},
-        {.radius = 1.0f, .center = {0, -1, 3}, .color = {255, 0, 0}, .specular = 10, .reflectiveness = 0.4f},
-        {.radius = 5000, .center = {0, -5001, 0}, .color = {255, 255, 0}, .specular = 1000, .reflectiveness = 0.5f}};
+        {.radius = 1.0, .center = {-2, 0, 4}, .color = {0, 255, 0}, .specular = 500, .reflectiveness = 0.2},
+        {.radius = 1.0, .center = {2, 0, 4}, .color = {0, 0, 255}, .specular = 500, .reflectiveness = 0.3},
+        {.radius = 1.0, .center = {0, -1, 3}, .color = {255, 0, 0}, .specular = 10, .reflectiveness = 0.4},
+        {.radius = 5000, .center = {0, -5001, 0}, .color = {255, 255, 0}, .specular = 1000, .reflectiveness = 0.5}};
 
 
 __device__ Light lights[] = {
-        (Light) {.lightType=LIGHT_TYPE_AMBIENT, .intensity=0.2f, .position={}, .direction={}},
-        (Light) {.lightType=LIGHT_TYPE_POINT, .intensity=0.6f, .position={2.0f, 1.0f, 0.0f}, .direction={}},
-        (Light) {.lightType=LIGHT_TYPE_DIRECTIONAL, .intensity=0.2f, .position={}, .direction={1.0f, 4.0f, 4.0f}}
+        (Light) {.lightType=LIGHT_TYPE_AMBIENT, .intensity=0.2, .position={}, .direction={}},
+        (Light) {.lightType=LIGHT_TYPE_POINT, .intensity=0.6, .position={2.0, 1.0, 0.0}, .direction={}},
+        (Light) {.lightType=LIGHT_TYPE_DIRECTIONAL, .intensity=0.2f, .position={}, .direction={1.0, 4.0, 4.0}
+        }
 };
 
 __device__ double dot(double *x, double *y) {
@@ -251,7 +252,7 @@ traceRay(double cameraPos[3],
     double R[3];
     reflectRay(temp, N2, R);
 
-    Color reflectedColor = traceRay(P, R, 0.001f, inf, recursion_depth - 1);
+    Color reflectedColor = traceRay(P, R, 0.001, inf, recursion_depth - 1);
     return (Color) {
             ROUND_COLOR(localColor.r * (1 - r) + reflectedColor.r * r),
             ROUND_COLOR(localColor.g * (1 - r) + reflectedColor.g * r),
@@ -260,8 +261,8 @@ traceRay(double cameraPos[3],
 }
 
 __device__ void putPixel(int x, int y, Color color) {
-    x = CANVAS_WIDTH / 2 + x;
-    y = CANVAS_HEIGHT / 2 - y - 1;
+    /*x = CANVAS_WIDTH / 2 + x;
+    y = CANVAS_HEIGHT / 2 - y - 1;*/
     if (x < 0 || x >= CANVAS_WIDTH || y < 0 || y >= CANVAS_HEIGHT) {
         return;
     }
@@ -278,7 +279,7 @@ __device__ void putPixel(int x, int y, Color color) {
     */
 }
 
-__global__ void renderPixel(int x, int y) {
+__device__ void renderPixel(int x, int y) {
     double d[3];
     canvasToViewport(x, y, d);
     // 4 is the number of reflections to calculate
@@ -286,36 +287,45 @@ __global__ void renderPixel(int x, int y) {
     putPixel(x, y, color);
 }
 
+typedef struct Pixel {
+    short x, y;
+} Pixel;
+
+__global__ void doIt(Pixel *pixels) {
+    const int n = CANVAS_WIDTH * CANVAS_HEIGHT;
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    for (int i = index; i < n; i += stride) {
+        // printf("Rendering pixel (%d, %d)\n", pixels[i].x, pixels[i].y);
+        renderPixel(pixels[i].x, pixels[i].y);
+    }
+}
 
 int main(void) {
-    typedef struct Pixel {
-        short x, y;
-    } Pixel;
-    Pixel *pixels;//= (Pixel *) malloc(CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel) * 5);
+    Pixel *pixels;
     cudaMallocManaged(&pixels, (size_t) CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel));
+    size_t counter = 0;
     for (short x = 0; x < CANVAS_WIDTH; ++x) {
         for (short y = 0; y < CANVAS_HEIGHT; ++y) {
-            pixels[x * y] = (Pixel) {.x = x, .y = y};
+            pixels[counter++] = (Pixel) {.x = x, .y = y};
         }
     }
 
-    for (int a = 0; a < CANVAS_WIDTH * CANVAS_HEIGHT; a++) {
-        renderPixel<<<1, 1>>>(pixels[a].x, pixels[a].y);
-    }
-    //free(pixels);
-    cudaFree(pixels);
-/*
     int blockSize = 256;
-    int numBlocks = (N + blockSize - 1) / blockSize;
+    int numBlocks = (CANVAS_WIDTH * CANVAS_HEIGHT + blockSize - 1) / blockSize;
     printf("Number of blocks: %d, block size: %d\n", numBlocks, blockSize);
 
-    add<<<numBlocks, blockSize>>>(N, x, y, z);
-    cudaDeviceSynchronize();
+    /*
+     *   // Prefetch the data to the GPU
+  int device = -1;
+  cudaGetDevice(&device);
+  cudaMemPrefetchAsync(x, N*sizeof(float), device, NULL);
+     */
 
-
-    // Free memory
-    cudaFree(x);
-    cudaFree(y);
-    cudaFree(z);*/
+    int device = -1;
+    cudaGetDevice(&device);
+    cudaMemPrefetchAsync(pixels, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel), device, NULL);
+    doIt<<<numBlocks, blockSize>>>(pixels);
+    cudaFree(pixels);
     return 0;
 }
