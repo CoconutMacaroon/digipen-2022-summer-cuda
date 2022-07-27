@@ -104,7 +104,7 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
                 t_max = DBL_MAX;
             }
             // shadow check
-            IntersectionData intersectionData = closestIntersection(P, L, 0.001f, t_max);
+            IntersectionData intersectionData = closestIntersection(P, L, 0.001, t_max);
 
             if (!intersectionData.isSphereNull)
                 continue;
@@ -169,7 +169,7 @@ __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double 
     double R[3];
     reflectRay(temp, N2, R);
 
-    Color reflectedColor = traceRay(P, R, 0.001f, inf, recursion_depth - 1);
+    Color reflectedColor = traceRay(P, R, 0.001, inf, recursion_depth - 1);
     return (Color) {ROUND_COLOR(localColor.r * (1 - r) + reflectedColor.r * r),
                     ROUND_COLOR(localColor.g * (1 - r) + reflectedColor.g * r),
                     ROUND_COLOR(localColor.b * (1 - r) + reflectedColor.b * r)};
