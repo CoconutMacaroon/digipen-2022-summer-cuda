@@ -1,23 +1,23 @@
 #include "main.h"
 
-__device__ double dot(double *x, double *y) {
+__device__ double dot(const double x[3], const double y[3]) {
     return x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
 }
 
-__device__ void add(double *a, double *b, double *resultLocation) {
+
+__device__ void add(const double a[], const double b[], double *resultLocation) {
     resultLocation[0] = a[0] + b[0];
     resultLocation[1] = a[1] + b[1];
     resultLocation[2] = a[2] + b[2];
 }
 
-__device__ void subtract(double *a, double *b, double *resultLocation) {
+__device__ void subtract(const double a[], const double b[], double *resultLocation) {
     resultLocation[0] = a[0] - b[0];
     resultLocation[1] = a[1] - b[1];
     resultLocation[2] = a[2] - b[2];
 }
 
-
-__device__ void multiply(double a, double *b, double *resultLocation) {
+__device__ void multiply(double a, const double b[], double *resultLocation) {
     resultLocation[0] = a * b[0];
     resultLocation[1] = a * b[1];
     resultLocation[2] = a * b[2];
@@ -39,7 +39,6 @@ __device__ void reflectRay(double R[], double N[], double *returnLocation) {
 
     subtract(dot_times_multiply, R, returnLocation);
 }
-
 
 __device__ void intersectRaySphere(double cameraPos[], double d[], Sphere sphere, double *returnLocation) {
     double CO[3];
@@ -87,7 +86,6 @@ __device__ IntersectionData closestIntersection(double cameraPos[], double d[], 
     return data;
 }
 
-
 __device__ double computeLighting(double P[], double N[], double V[], double s) {
     double intensity = 0.0;
     for (size_t i = 0; i < ARR_LEN(lights); ++i) {
@@ -108,13 +106,12 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
             // shadow check
             IntersectionData intersectionData = closestIntersection(P, L, 0.001f, t_max);
 
-            if (!intersectionData.isSphereNull) {
+            if (!intersectionData.isSphereNull)
                 continue;
-            }
 
-            double Nf[] = {(double) N[0], (double) N[1], (double) N[2]};
+
             // diffuse
-            double n_dot_l = dot(Nf, L);
+            double n_dot_l = dot(N, L);
 
             if (n_dot_l > 0) {
                 intensity += lights[i].intensity * n_dot_l / (LENGTH(N) * LENGTH(L));
@@ -127,7 +124,6 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
 
                 reflectRay(L, N, R);
 
-                // double r_dot_v = dot(R, V);
                 double r_dot_v = dot(R, V);
 
                 if (r_dot_v > 0) {
@@ -139,19 +135,13 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
     return intensity;
 }
 
-__device__ byte roundRGBValue(double n) {
-    return round(n) > 255.0 ? 255 : (byte) round(n);
-}
-
 __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double max_t, int recursion_depth) {
     IntersectionData intersectionData = closestIntersection(cameraPos, d, min_t, max_t);
     if (intersectionData.isSphereNull) {
-        // this is the background color
-        return (Color) {0, 0, 0};
+        return BACKGROUND_COLOR;
     }
     double tmp1[3];
-    double d_double[] = {(double) d[0], (double) d[1], (double) d[2]};
-    multiply(intersectionData.closest_t, d_double, tmp1);
+    multiply(intersectionData.closest_t, d, tmp1);
 
     double P[3];
     add(cameraPos, tmp1, P);
@@ -166,9 +156,9 @@ __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double 
     multiply(-1.0, d, tmp3);
 
     double lighting = computeLighting(P, N, tmp3, intersectionData.sphere.specular);
-    Color localColor = {roundRGBValue(intersectionData.sphere.color.r * lighting),
-                        roundRGBValue(intersectionData.sphere.color.g * lighting),
-                        roundRGBValue(intersectionData.sphere.color.b * lighting)};
+    Color localColor = {ROUND_COLOR(intersectionData.sphere.color.r * lighting),
+                        ROUND_COLOR(intersectionData.sphere.color.g * lighting),
+                        ROUND_COLOR(intersectionData.sphere.color.b * lighting)};
     double r = intersectionData.sphere.reflectiveness;
     if (recursion_depth <= 0 || r <= 0) {
         return localColor;
@@ -179,71 +169,50 @@ __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double 
     double R[3];
     reflectRay(temp, N2, R);
 
-    Color reflectedColor = traceRay(P, R, 0.001, inf, recursion_depth - 1);
-    return (Color) {roundRGBValue(localColor.r * (1 - r) + reflectedColor.r * r),
-                    roundRGBValue(localColor.g * (1 - r) + reflectedColor.g * r),
-                    roundRGBValue(localColor.b * (1 - r) + reflectedColor.b * r)};
+    Color reflectedColor = traceRay(P, R, 0.001f, inf, recursion_depth - 1);
+    return (Color) {ROUND_COLOR(localColor.r * (1 - r) + reflectedColor.r * r),
+                    ROUND_COLOR(localColor.g * (1 - r) + reflectedColor.g * r),
+                    ROUND_COLOR(localColor.b * (1 - r) + reflectedColor.b * r)};
 }
 
 __device__ void putPixel(int x, int y, Color color) {
     x = CANVAS_WIDTH / 2 + x;
     y = CANVAS_HEIGHT / 2 - y - 1;
     if (x < 0 || x >= CANVAS_WIDTH || y < 0 || y >= CANVAS_HEIGHT) {
+        printf("[%d, %d] [%d, %d, %d]\n", x, y, color.r, color.g, color.b);
         return;
     }
+
+    printf("(%d, %d) (%d, %d, %d)\n", x, y, color.r, color.g, color.b);
 }
 
 __device__ void renderPixel(int x, int y) {
     double d[3];
     canvasToViewport(x, y, d);
-    // 4 is the number of reflections to calculate
-    Color color = traceRay(cameraPosition, d, 1, inf, 4);
+    Color color = traceRay(cameraPosition, d, 1, inf, RECURSION_DEPTH_FOR_REFLECTIONS);
     putPixel(x, y, color);
 }
 
-typedef struct Pixel {
-    short x, y;
-} Pixel;
-
-__global__ void doIt(Pixel *pixels) {
-    const int n = CANVAS_WIDTH * CANVAS_HEIGHT;
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-    for (int i = index; i < n; i += stride) {
-        // printf("Rendering pixel (%d, %d)\n", pixels[i].x, pixels[i].y);
+__global__ void launch(Pixel *pixels, int numPixels) {
+    for(int i = 0; i < numPixels; ++i) {
         renderPixel(pixels[i].x, pixels[i].y);
     }
 }
 
-int main(void) {
-    Pixel *pixels = (Pixel *) malloc((size_t) CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel));
+int main() {
+    Pixel *pixelsToRender;
 
-    size_t counter = 0;
+    cudaMallocManaged(&pixelsToRender, CANVAS_WIDTH * CANVAS_HEIGHT * 4 * sizeof(Pixel));
 
-    // TODO: in theory the index could be x * CANVAS_WIDTH + y
-    // need to test that
 
-    for (short x = 0; x < CANVAS_WIDTH; ++x) {
-        for (short y = 0; y < CANVAS_HEIGHT; ++y) {
-            pixels[counter++] = (Pixel) {.x = x, .y = y};
+    int counter = 0;
+    for (short x = -CANVAS_WIDTH; x < CANVAS_WIDTH; ++x) {
+        for (short y = -CANVAS_HEIGHT; y < CANVAS_HEIGHT; ++y) {
+            pixelsToRender[counter++] = (Pixel) {.x = x, .y = y};
         }
     }
-
-
-    // make a pointer for the copy of the pixels on
-    // the GPU, and copy the pixels into that array
-    Pixel *device_pixels;
-
-    cudaMalloc(&device_pixels, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel));
-
-    cudaMemcpy(device_pixels, pixels, CANVAS_WIDTH * CANVAS_HEIGHT * sizeof(Pixel), cudaMemcpyHostToDevice);
-
-    // run the kernel
-    doIt<<<(CANVAS_WIDTH * CANVAS_HEIGHT + 256 - 1) / 256, 256>>>(device_pixels);
+    launch<<<1, 1>>>(pixelsToRender, counter);
     cudaDeviceSynchronize();
 
-    free(pixels);
-    cudaFree(device_pixels);
-
-    return EXIT_SUCCESS;
+    return 0;
 }
