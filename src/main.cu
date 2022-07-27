@@ -178,6 +178,8 @@ __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double 
 __device__ void putPixel(int x, int y, Color color) {
     x = CANVAS_WIDTH / 2 + x;
     y = CANVAS_HEIGHT / 2 - y - 1;
+    // TODO: can we check this BEFORE we do the rendering so we
+    // don't render if the result would get discarded anyways
     if (x < 0 || x >= CANVAS_WIDTH || y < 0 || y >= CANVAS_HEIGHT) {
         printf("[%d, %d] [%d, %d, %d]\n", x, y, color.r, color.g, color.b);
         return;
