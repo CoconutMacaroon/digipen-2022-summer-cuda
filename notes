@@ -1,0 +1,1 @@
+Compile with `make`, then run with `./bin/main > render`. Then run the Python script to view the render

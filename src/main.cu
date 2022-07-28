@@ -104,7 +104,7 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
                 t_max = DBL_MAX;
             }
             // shadow check
-            IntersectionData intersectionData = closestIntersection(P, L, 0.001, t_max);
+            IntersectionData intersectionData = closestIntersection(P, L, 0.001f, t_max);
 
             if (!intersectionData.isSphereNull)
                 continue;
@@ -135,11 +135,18 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
     return intensity;
 }
 
+__device__ const byte DEBUG = 0;
+
 __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double max_t, int recursion_depth) {
+    if(DEBUG) printf("In trace ray\n");
     IntersectionData intersectionData = closestIntersection(cameraPos, d, min_t, max_t);
     if (intersectionData.isSphereNull) {
+        if (DEBUG) printf("This is background\n");
+
         return BACKGROUND_COLOR;
     }
+    if (DEBUG) printf("This isn't background\n");
+
     double tmp1[3];
     multiply(intersectionData.closest_t, d, tmp1);
 
@@ -154,11 +161,11 @@ __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double 
 
     double tmp3[3];
     multiply(-1.0, d, tmp3);
-
     double lighting = computeLighting(P, N, tmp3, intersectionData.sphere.specular);
     Color localColor = {ROUND_COLOR(intersectionData.sphere.color.r * lighting),
                         ROUND_COLOR(intersectionData.sphere.color.g * lighting),
                         ROUND_COLOR(intersectionData.sphere.color.b * lighting)};
+
     double r = intersectionData.sphere.reflectiveness;
     if (recursion_depth <= 0 || r <= 0) {
         return localColor;
@@ -181,22 +188,27 @@ __device__ void putPixel(int x, int y, Color color) {
     // TODO: can we check this BEFORE we do the rendering so we
     // don't render if the result would get discarded anyways
     if (x < 0 || x >= CANVAS_WIDTH || y < 0 || y >= CANVAS_HEIGHT) {
-        printf("[%d, %d] [%d, %d, %d]\n", x, y, color.r, color.g, color.b);
+        //printf("[%d, %d] [%d, %d, %d]\n", x, y, color.r, color.g, color.b);
         return;
     }
 
-    printf("(%d, %d) (%d, %d, %d)\n", x, y, color.r, color.g, color.b);
+    printf("%d %d %d %d %d\n", x, y, color.r, color.g, color.b);
 }
 
 __device__ void renderPixel(int x, int y) {
+    if(DEBUG)printf("Entered renderPixel\n");
     double d[3];
     canvasToViewport(x, y, d);
+    if(DEBUG)printf("Canvas to viewport worked\n");
     Color color = traceRay(cameraPosition, d, 1, inf, RECURSION_DEPTH_FOR_REFLECTIONS);
+    if(DEBUG)printf("Trace ray worked\n");
     putPixel(x, y, color);
+    if(DEBUG)printf("putPixel worked, exiting renderPixel\n");
+
 }
 
 __global__ void launch(Pixel *pixels, int numPixels) {
-    for(int i = 0; i < numPixels; ++i) {
+    for (int i = 0; i < numPixels; ++i) {
         renderPixel(pixels[i].x, pixels[i].y);
     }
 }
@@ -208,13 +220,14 @@ int main() {
 
 
     int counter = 0;
-    for (short x = -CANVAS_WIDTH; x < CANVAS_WIDTH; ++x) {
-        for (short y = -CANVAS_HEIGHT; y < CANVAS_HEIGHT; ++y) {
+    for (short x = -CANVAS_WIDTH; x < CANVAS_WIDTH; ++x)
+        for (short y = -CANVAS_HEIGHT; y < CANVAS_HEIGHT; ++y)
             pixelsToRender[counter++] = (Pixel) {.x = x, .y = y};
-        }
-    }
+
+
+    if(DEBUG) printf("Counter: %d\n", counter);
+
     launch<<<1, 1>>>(pixelsToRender, counter);
     cudaDeviceSynchronize();
-
     return 0;
 }

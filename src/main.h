@@ -9,6 +9,13 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#include <SDL.h>
+#include <iostream>
+#include <iomanip>
+#include <vector>
+#include <algorithm>
+#include <chrono>
+
 #define LIGHT_TYPE_AMBIENT 1
 #define LIGHT_TYPE_POINT 2
 #define LIGHT_TYPE_DIRECTIONAL 3
@@ -46,8 +53,8 @@ typedef struct Light {
 
 __device__ Color BACKGROUND_COLOR = {0, 0, 0};
 
-const short CANVAS_WIDTH = 1;
-const short CANVAS_HEIGHT = 1;
+const short CANVAS_WIDTH = 500;
+const short CANVAS_HEIGHT = 500;
 
 __device__ double D = 1;
 // TODO: I may need to swap CANVAS_WIDTH and CANVAS_HEIGHT
@@ -56,7 +63,7 @@ __device__ double VIEWPORT_WIDTH = (double) CANVAS_WIDTH / (double)CANVAS_HEIGHT
 __device__ double VIEWPORT_HEIGHT = 1;
 __device__ double inf = DBL_MAX;
 __device__ double cameraPosition[] = {0, 0, 0};
-__device__ int RECURSION_DEPTH_FOR_REFLECTIONS = 4;
+__device__ int RECURSION_DEPTH_FOR_REFLECTIONS = 1;
 
 __device__ Sphere spheres[] = {
         {.radius = 1.0f, .center = {-2, 0, 4}, .color = {0, 255, 0}, .specular = 500, .reflectiveness = 0.2f},
