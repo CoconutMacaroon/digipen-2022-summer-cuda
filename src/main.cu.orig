@@ -174,8 +174,8 @@ __device__ Color traceRay(double cameraPos[3],
         ROUND_COLOR(intersectionData.sphere.color.r * lighting),
         ROUND_COLOR(intersectionData.sphere.color.g * lighting),
         ROUND_COLOR(intersectionData.sphere.color.b * lighting)};
-
-    if (recursion_depth <= 0 || intersectionData.sphere.reflectiveness <= 0)
+    double r = intersectionData.sphere.reflectiveness;
+    if (recursion_depth <= 0 || r <= 0)
         return localColor;
 
     double temp[3];
@@ -184,23 +184,17 @@ __device__ Color traceRay(double cameraPos[3],
     reflectRay(temp, N2, R);
 
     Color reflectedColor = traceRay(P, R, 0.001, inf, recursion_depth - 1);
-    return (Color){
-        ROUND_COLOR(localColor.r *
-                        (1 - intersectionData.sphere.reflectiveness) +
-                    reflectedColor.r * intersectionData.sphere.reflectiveness),
-        ROUND_COLOR(localColor.g *
-                        (1 - intersectionData.sphere.reflectiveness) +
-                    reflectedColor.g * intersectionData.sphere.reflectiveness),
-        ROUND_COLOR(localColor.b *
-                        (1 - intersectionData.sphere.reflectiveness) +
-                    reflectedColor.b * intersectionData.sphere.reflectiveness)};
+    return (Color){ROUND_COLOR(localColor.r * (1 - r) + reflectedColor.r * r),
+                   ROUND_COLOR(localColor.g * (1 - r) + reflectedColor.g * r),
+                   ROUND_COLOR(localColor.b * (1 - r) + reflectedColor.b * r)};
 }
 
 __device__ void
 putPixel(int x, int y, Color color, PixelRenderData *renderData) {
     x = CANVAS_WIDTH / 2 + x;
     y = CANVAS_HEIGHT / 2 - y - 1;
-
+    // TODO: can we check this BEFORE we do the rendering so we
+    // don't render if the result would get discarded anyways
     if (x < 0 || x >= CANVAS_WIDTH || y < 0 || y >= CANVAS_HEIGHT) {
         return;
     }
@@ -224,31 +218,24 @@ __device__ void renderPixel(int x, int y, PixelRenderData *data) {
         data);
 }
 
-__global__ void launch(Pixel *pixels,
-                       PixelRenderData *renderData,
-                       int canvasWidth,
-                       int canvasHeight) {
-    int counter = 0;
-    for (short x = -canvasWidth; x < canvasWidth; ++x)
-        for (short y = -canvasHeight; y < canvasHeight; ++y)
-            pixels[counter++] = (Pixel){.x = x, .y = y};
-
+__global__ void
+launch(Pixel *pixels, int numPixels, PixelRenderData *renderData) {
     int index = threadIdx.x;
     int stride = blockDim.x;
-    for (int i = index; i < counter; i += stride)
+    for (int i = index; i < numPixels; i += stride)
         renderPixel(pixels[i].x, pixels[i].y, renderData);
 }
-__global__ void updateCameraPosition() { cameraPosition[2] -= 0.05; }
+
 int main() {
     // this contains the coords of all the pixels that need to be rendered
     Pixel *pixelsToRender;
-    cudaMalloc(&pixelsToRender,
-               CANVAS_WIDTH * CANVAS_HEIGHT * 4 * sizeof(Pixel));
+    cudaMallocManaged(&pixelsToRender,
+                      CANVAS_WIDTH * CANVAS_HEIGHT * 4 * sizeof(Pixel));
 
-    // create a pixel buffer for CUDA
-    PixelRenderData *data;
-    cudaMallocManaged(&data,
-                      sizeof(PixelRenderData) * CANVAS_WIDTH * CANVAS_HEIGHT);
+    int counter = 0;
+    for (short x = -CANVAS_WIDTH; x < CANVAS_WIDTH; ++x)
+        for (short y = -CANVAS_HEIGHT; y < CANVAS_HEIGHT; ++y)
+            pixelsToRender[counter++] = (Pixel){.x = x, .y = y};
 
     // setup SDL
     SDL_Init(SDL_INIT_EVERYTHING);
@@ -269,13 +256,22 @@ int main() {
                                              CANVAS_HEIGHT);
     std::vector<unsigned char> pixels(CANVAS_WIDTH * CANVAS_HEIGHT * 4, 0);
 
+    bool useLockTexture = false;
+
     bool running = true;
 
-    // fast SDL2 rendering code from
-    // https://stackoverflow.com/a/33312056
-    Uint64 startTime;
+    // create a pixel buffer for CUDA
+    PixelRenderData *data;
+    cudaMallocManaged(&data,
+                      sizeof(PixelRenderData) * CANVAS_WIDTH * CANVAS_HEIGHT);
+
+    launch<<<1, 256>>>(pixelsToRender, counter, data);
+    cudaDeviceSynchronize();
+
+    // fast SDL2 rendering code from https://stackoverflow.com/a/33312056
     while (running) {
-        startTime = SDL_GetTicks64();
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+        SDL_RenderClear(renderer);
 
         // handle events
         SDL_Event ev;
@@ -286,11 +282,12 @@ int main() {
                 running = false;
                 break;
             }
-        }
 
-        launch<<<1, 256>>>(pixelsToRender, data, CANVAS_WIDTH, CANVAS_HEIGHT);
-        updateCameraPosition<<<1, 1>>>();
-        cudaDeviceSynchronize();
+            if (SDL_KEYDOWN == ev.type &&
+                SDL_SCANCODE_L == ev.key.keysym.scancode) {
+                useLockTexture = !useLockTexture;
+            }
+        }
 
         for (int i = 0; i < CANVAS_WIDTH * CANVAS_HEIGHT; i++) {
             const unsigned int offset =
@@ -305,21 +302,25 @@ int main() {
                 renderer, data[i].r, data[i].g, data[i].b, SDL_ALPHA_OPAQUE);
             SDL_RenderDrawPoint(renderer, data[i].x, data[i].y);
         }
-/////
-        int device = -1;
-        cudaGetDevice(&device);
-        cudaMemPrefetchAsync(data, CANVAS_WIDTH * CANVAS_HEIGHT * 4 * sizeof(Pixel), device, NULL);
-/////
-        SDL_UpdateTexture(texture, nullptr, pixels.data(), CANVAS_WIDTH * 4);
-
+        if (useLockTexture) {
+            unsigned char *lockedPixels = nullptr;
+            int pitch = 0;
+            SDL_LockTexture(texture,
+                            nullptr,
+                            reinterpret_cast<void **>(&lockedPixels),
+                            &pitch);
+            std::copy_n(pixels.data(), pixels.size(), lockedPixels);
+            SDL_UnlockTexture(texture);
+        } else {
+            SDL_UpdateTexture(
+                texture, nullptr, pixels.data(), CANVAS_WIDTH * 4);
+        }
         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
         SDL_RenderPresent(renderer);
-        printf("Frame time is %lums\n", SDL_GetTicks64() - startTime);
     }
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
     cudaFree(pixelsToRender);
-    cudaFree(data);
     return EXIT_SUCCESS;
 }
