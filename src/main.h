@@ -54,9 +54,10 @@ const short CANVAS_HEIGHT = 512;
 __device__ double D = 1;
 // TODO: I may need to swap CANVAS_WIDTH and CANVAS_HEIGHT
 //       in this division if CANVAS_HEIGHT > CANVAS_WIDTH
-__device__ double VIEWPORT_WIDTH = (double)CANVAS_WIDTH / (double)CANVAS_HEIGHT;
-__device__ double VIEWPORT_HEIGHT = 1;
-__device__ double inf = DBL_MAX;
+__device__ const double VIEWPORT_WIDTH =
+    (double)CANVAS_WIDTH / (double)CANVAS_HEIGHT;
+__device__ const double VIEWPORT_HEIGHT = 1;
+__device__ const double inf = DBL_MAX;
 __device__ double cameraPosition[] = {0, 0, 0};
 
 // TODO: recursion is causing issues, make the reflection code a loop instead

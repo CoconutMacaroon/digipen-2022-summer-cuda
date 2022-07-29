@@ -66,7 +66,7 @@ __device__ void intersectRaySphere(double cameraPos[], double d[],
 
 __device__ IntersectionData closestIntersection(double cameraPos[], double d[],
                                                 double t_min, double t_max) {
-    double closest_t = DBL_MAX;
+    double closest_t = inf;
     Sphere closestSphere;
     bool isNull = true;
     for (size_t i = 0; i < ARR_LEN(spheres); ++i) {
@@ -140,22 +140,12 @@ __device__ double computeLighting(double P[], double N[], double V[],
     return intensity;
 }
 
-__device__ const byte DEBUG = 0;
-
 __device__ Color traceRay(double cameraPos[3], double d[], double min_t,
                           double max_t, int recursion_depth) {
-    if (DEBUG)
-        printf("In trace ray\n");
     IntersectionData intersectionData =
         closestIntersection(cameraPos, d, min_t, max_t);
-    if (intersectionData.isSphereNull) {
-        if (DEBUG)
-            printf("This is background\n");
-
+    if (intersectionData.isSphereNull)
         return BACKGROUND_COLOR;
-    }
-    if (DEBUG)
-        printf("This isn't background\n");
 
     double tmp1[3];
     multiply(intersectionData.closest_t, d, tmp1);
@@ -199,7 +189,6 @@ __device__ void putPixel(int x, int y, Color color,
     // TODO: can we check this BEFORE we do the rendering so we
     // don't render if the result would get discarded anyways
     if (x < 0 || x >= CANVAS_WIDTH || y < 0 || y >= CANVAS_HEIGHT) {
-        // printf("[%d, %d] [%d, %d, %d]\n", x, y, color.r, color.g, color.b);
         return;
     }
     renderData[CANVAS_WIDTH * x + y].x = x;
@@ -208,24 +197,15 @@ __device__ void putPixel(int x, int y, Color color,
     renderData[CANVAS_WIDTH * x + y].r = color.r;
     renderData[CANVAS_WIDTH * x + y].g = color.g;
     renderData[CANVAS_WIDTH * x + y].b = color.b;
-
-    // printf("%d %d %d %d %d\n", x, y, color.r, color.g, color.b);
 }
 
 __device__ void renderPixel(int x, int y, PixelRenderData *data) {
-    if (DEBUG)
-        printf("Entered renderPixel\n");
     double d[3];
     canvasToViewport(x, y, d);
-    if (DEBUG)
-        printf("Canvas to viewport worked\n");
-    Color color =
-        traceRay(cameraPosition, d, 1, inf, RECURSION_DEPTH_FOR_REFLECTIONS);
-    if (DEBUG)
-        printf("Trace ray worked\n");
-    putPixel(x, y, color, data);
-    if (DEBUG)
-        printf("putPixel worked, exiting renderPixel\n");
+    putPixel(
+        x, y,
+        traceRay(cameraPosition, d, 1, inf, RECURSION_DEPTH_FOR_REFLECTIONS),
+        data);
 }
 
 __global__ void launch(Pixel *pixels, int numPixels,
@@ -265,8 +245,6 @@ int main() {
 
     launch<<<1, 1>>>(pixelsToRender, counter, data);
     cudaDeviceSynchronize();
-    if (DEBUG)
-        printf("Counter: %d\n", counter);
 
     // render the buffer
     for (int i = 0; i < CANVAS_WIDTH * CANVAS_HEIGHT; i++) {
