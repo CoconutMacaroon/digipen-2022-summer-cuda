@@ -4,15 +4,15 @@ __device__ double dot(const double x[3], const double y[3]) {
     return x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
 }
 
-__device__ void add(const double a[], const double b[],
-                    double *resultLocation) {
+__device__ void
+add(const double a[], const double b[], double *resultLocation) {
     resultLocation[0] = a[0] + b[0];
     resultLocation[1] = a[1] + b[1];
     resultLocation[2] = a[2] + b[2];
 }
 
-__device__ void subtract(const double a[], const double b[],
-                         double *resultLocation) {
+__device__ void
+subtract(const double a[], const double b[], double *resultLocation) {
     resultLocation[0] = a[0] - b[0];
     resultLocation[1] = a[1] - b[1];
     resultLocation[2] = a[2] - b[2];
@@ -41,8 +41,10 @@ __device__ void reflectRay(double R[], double N[], double *returnLocation) {
     subtract(dot_times_multiply, R, returnLocation);
 }
 
-__device__ void intersectRaySphere(double cameraPos[], double d[],
-                                   Sphere sphere, double *returnLocation) {
+__device__ void intersectRaySphere(double cameraPos[],
+                                   double d[],
+                                   Sphere sphere,
+                                   double *returnLocation) {
     double CO[3];
     subtract(cameraPos, sphere.center, CO);
 
@@ -64,8 +66,10 @@ __device__ void intersectRaySphere(double cameraPos[], double d[],
     returnLocation[1] = (double)((-b - discriminantSqrt) / (2 * a));
 }
 
-__device__ IntersectionData closestIntersection(double cameraPos[], double d[],
-                                                double t_min, double t_max) {
+__device__ IntersectionData closestIntersection(double cameraPos[],
+                                                double d[],
+                                                double t_min,
+                                                double t_max) {
     double closest_t = inf;
     Sphere closestSphere;
     bool isNull = true;
@@ -90,8 +94,8 @@ __device__ IntersectionData closestIntersection(double cameraPos[], double d[],
     return data;
 }
 
-__device__ double computeLighting(double P[], double N[], double V[],
-                                  double s) {
+__device__ double
+computeLighting(double P[], double N[], double V[], double s) {
     double intensity = 0.0;
     for (size_t i = 0; i < ARR_LEN(lights); ++i) {
         if (lights[i].lightType == LIGHT_TYPE_AMBIENT) {
@@ -140,8 +144,11 @@ __device__ double computeLighting(double P[], double N[], double V[],
     return intensity;
 }
 
-__device__ Color traceRay(double cameraPos[3], double d[], double min_t,
-                          double max_t, int recursion_depth) {
+__device__ Color traceRay(double cameraPos[3],
+                          double d[],
+                          double min_t,
+                          double max_t,
+                          int recursion_depth) {
     IntersectionData intersectionData =
         closestIntersection(cameraPos, d, min_t, max_t);
     if (intersectionData.isSphereNull)
@@ -182,8 +189,8 @@ __device__ Color traceRay(double cameraPos[3], double d[], double min_t,
                    ROUND_COLOR(localColor.b * (1 - r) + reflectedColor.b * r)};
 }
 
-__device__ void putPixel(int x, int y, Color color,
-                         PixelRenderData *renderData) {
+__device__ void
+putPixel(int x, int y, Color color, PixelRenderData *renderData) {
     x = CANVAS_WIDTH / 2 + x;
     y = CANVAS_HEIGHT / 2 - y - 1;
     // TODO: can we check this BEFORE we do the rendering so we
@@ -205,16 +212,24 @@ __device__ void renderPixel(int x, int y, PixelRenderData *data) {
     double d[3];
     canvasToViewport(x, y, d);
     putPixel(
-        x, y,
+        x,
+        y,
         traceRay(cameraPosition, d, 1, inf, RECURSION_DEPTH_FOR_REFLECTIONS),
         data);
 }
 
-__global__ void launch(Pixel *pixels, int numPixels,
-                       PixelRenderData *renderData) {
+__global__ void launch(Pixel *pixels,
+                       PixelRenderData *renderData,
+                       int canvasWidth,
+                       int canvasHeight) {
+    int counter = 0;
+    for (short x = -canvasWidth; x < canvasWidth; ++x)
+        for (short y = -canvasHeight; y < canvasHeight; ++y)
+            pixels[counter++] = (Pixel){.x = x, .y = y};
+
     int index = threadIdx.x;
     int stride = blockDim.x;
-    for (int i = index; i < numPixels; i += stride)
+    for (int i = index; i < counter; i += stride)
         renderPixel(pixels[i].x, pixels[i].y, renderData);
 }
 
@@ -224,23 +239,23 @@ int main() {
     cudaMallocManaged(&pixelsToRender,
                       CANVAS_WIDTH * CANVAS_HEIGHT * 4 * sizeof(Pixel));
 
-    int counter = 0;
-    for (short x = -CANVAS_WIDTH; x < CANVAS_WIDTH; ++x)
-        for (short y = -CANVAS_HEIGHT; y < CANVAS_HEIGHT; ++y)
-            pixelsToRender[counter++] = (Pixel){.x = x, .y = y};
-
     // setup SDL
     SDL_Init(SDL_INIT_EVERYTHING);
-    SDL_Window *window = SDL_CreateWindow("CUDA Raytracer", SDL_WINDOWPOS_UNDEFINED,
-                                          SDL_WINDOWPOS_UNDEFINED, CANVAS_WIDTH,
-                                          CANVAS_HEIGHT, SDL_WINDOW_SHOWN);
+    SDL_Window *window = SDL_CreateWindow("CUDA Raytracer",
+                                          SDL_WINDOWPOS_UNDEFINED,
+                                          SDL_WINDOWPOS_UNDEFINED,
+                                          CANVAS_WIDTH,
+                                          CANVAS_HEIGHT,
+                                          SDL_WINDOW_SHOWN);
     SDL_Renderer *renderer =
         SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 
-    SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+    SDL_Texture *texture = SDL_CreateTexture(renderer,
+                                             SDL_PIXELFORMAT_ARGB8888,
                                              SDL_TEXTUREACCESS_STREAMING,
-                                             CANVAS_WIDTH, CANVAS_HEIGHT);
+                                             CANVAS_WIDTH,
+                                             CANVAS_HEIGHT);
     std::vector<unsigned char> pixels(CANVAS_WIDTH * CANVAS_HEIGHT * 4, 0);
 
     bool useLockTexture = false;
@@ -252,7 +267,7 @@ int main() {
     cudaMallocManaged(&data,
                       sizeof(PixelRenderData) * CANVAS_WIDTH * CANVAS_HEIGHT);
 
-    launch<<<1, 256>>>(pixelsToRender, counter, data);
+    launch<<<1, 256>>>(pixelsToRender, data, CANVAS_WIDTH, CANVAS_HEIGHT);
     cudaDeviceSynchronize();
 
     // fast SDL2 rendering code from https://stackoverflow.com/a/33312056
@@ -285,23 +300,26 @@ int main() {
             pixels[offset + 2] = data[i].r;
             pixels[offset + 3] = SDL_ALPHA_OPAQUE;
 
-            SDL_SetRenderDrawColor(renderer, data[i].r, data[i].g, data[i].b,
-                                   SDL_ALPHA_OPAQUE);
+            SDL_SetRenderDrawColor(
+                renderer, data[i].r, data[i].g, data[i].b, SDL_ALPHA_OPAQUE);
             SDL_RenderDrawPoint(renderer, data[i].x, data[i].y);
         }
         if (useLockTexture) {
             unsigned char *lockedPixels = nullptr;
             int pitch = 0;
-            SDL_LockTexture(texture, nullptr,
-                            reinterpret_cast<void **>(&lockedPixels), &pitch);
+            SDL_LockTexture(texture,
+                            nullptr,
+                            reinterpret_cast<void **>(&lockedPixels),
+                            &pitch);
             std::copy_n(pixels.data(), pixels.size(), lockedPixels);
             SDL_UnlockTexture(texture);
         } else {
-            SDL_UpdateTexture(texture, nullptr, pixels.data(),
-                              CANVAS_WIDTH * 4);
+            SDL_UpdateTexture(
+                texture, nullptr, pixels.data(), CANVAS_WIDTH * 4);
         }
         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
         SDL_RenderPresent(renderer);
+        break;
     }
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

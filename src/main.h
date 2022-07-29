@@ -104,8 +104,10 @@ __device__ Light lights[] = {(Light){.lightType = LIGHT_TYPE_AMBIENT,
 typedef struct {
     short x, y;
 } Pixel;
+
 typedef struct {
     int x, y;
     byte r, g, b;
 } PixelRenderData;
+
 #endif // SDL2_TEST_MAIN_H
