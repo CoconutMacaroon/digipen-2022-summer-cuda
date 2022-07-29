@@ -10,6 +10,10 @@
 #include <stdlib.h>
 
 #include <SDL2/SDL.h>
+#include <algorithm>
+#include <chrono>
+#include <iomanip>
+#include <vector>
 
 #define LIGHT_TYPE_AMBIENT 1
 #define LIGHT_TYPE_POINT 2

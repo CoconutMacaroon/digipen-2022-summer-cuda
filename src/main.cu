@@ -210,7 +210,9 @@ __device__ void renderPixel(int x, int y, PixelRenderData *data) {
 
 __global__ void launch(Pixel *pixels, int numPixels,
                        PixelRenderData *renderData) {
-    for (int i = 0; i < numPixels; ++i)
+    int index = threadIdx.x;
+    int stride = blockDim.x;
+    for (int i = index; i < numPixels; i += stride)
         renderPixel(pixels[i].x, pixels[i].y, renderData);
 }
 
@@ -226,38 +228,92 @@ int main() {
 
     /////////////////////////////////////////////
 
-    // boring setup
-    SDL_Event event;
-    SDL_Renderer *renderer;
-    SDL_Window *window;
+    SDL_Init(SDL_INIT_EVERYTHING);
+    SDL_Window *window = SDL_CreateWindow("SDL", SDL_WINDOWPOS_UNDEFINED,
+                                          SDL_WINDOWPOS_UNDEFINED, CANVAS_WIDTH,
+                                          CANVAS_HEIGHT, SDL_WINDOW_SHOWN);
+    SDL_Renderer *renderer =
+        SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 
-    SDL_Init(SDL_INIT_VIDEO);
-    SDL_CreateWindowAndRenderer(CANVAS_WIDTH, CANVAS_HEIGHT, 0, &window,
-                                &renderer);
-    SDL_SetWindowTitle(window, "CUDA Raytracer");
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-    SDL_RenderClear(renderer);
+    SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                             SDL_TEXTUREACCESS_STREAMING,
+                                             CANVAS_WIDTH, CANVAS_HEIGHT);
+    std::vector<unsigned char> pixels(CANVAS_WIDTH * CANVAS_HEIGHT * 4, 0);
+
+    bool useLocktexture = false;
+
+    bool running = true;
 
     // create a pixel buffer for CUDA
     PixelRenderData *data;
     cudaMallocManaged(&data,
                       sizeof(PixelRenderData) * CANVAS_WIDTH * CANVAS_HEIGHT);
 
-    launch<<<1, 1>>>(pixelsToRender, counter, data);
+    launch<<<1, 256>>>(pixelsToRender, counter, data);
     cudaDeviceSynchronize();
+    /*
+        // render the buffer
+        for (int i = 0; i < CANVAS_WIDTH * CANVAS_HEIGHT; i++) {
+            SDL_SetRenderDrawColor(renderer, data[i].r, data[i].g, data[i].b,
+                                   SDL_ALPHA_OPAQUE);
+            SDL_RenderDrawPoint(renderer, data[i].x, data[i].y);
+        }
+        SDL_RenderPresent(renderer);
 
-    // render the buffer
-    for (int i = 0; i < CANVAS_WIDTH * CANVAS_HEIGHT; i++) {
-        SDL_SetRenderDrawColor(renderer, data[i].r, data[i].g, data[i].b,
-                               SDL_ALPHA_OPAQUE);
-        SDL_RenderDrawPoint(renderer, data[i].x, data[i].y);
-    }
-    SDL_RenderPresent(renderer);
+        // if the user wants to close the window, close it and do a bit of
+       cleanup while (1) { if (SDL_PollEvent(&event) && event.type == SDL_QUIT)
+                break;
+        }
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();*/
+    while (running) {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+        SDL_RenderClear(renderer);
 
-    // if the user wants to close the window, close it and do a bit of cleanup
-    while (1) {
-        if (SDL_PollEvent(&event) && event.type == SDL_QUIT)
-            break;
+        // handle events
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev)) {
+            if ((SDL_QUIT == ev.type) ||
+                (SDL_KEYDOWN == ev.type &&
+                 SDL_SCANCODE_ESCAPE == ev.key.keysym.scancode)) {
+                running = false;
+                break;
+            }
+
+            if (SDL_KEYDOWN == ev.type &&
+                SDL_SCANCODE_L == ev.key.keysym.scancode) {
+                useLocktexture = !useLocktexture;
+            }
+        }
+
+        for (int i = 0; i < CANVAS_WIDTH * CANVAS_HEIGHT; i++) {
+            const unsigned int offset =
+                (CANVAS_WIDTH * data[i].y * 4) + data[i].x * 4;
+
+            pixels[offset + 0] = data[i].b;
+            pixels[offset + 1] = data[i].g;
+            pixels[offset + 2] = data[i].r;
+            pixels[offset + 3] = SDL_ALPHA_OPAQUE;
+
+            SDL_SetRenderDrawColor(renderer, data[i].r, data[i].g, data[i].b,
+                                   SDL_ALPHA_OPAQUE);
+            SDL_RenderDrawPoint(renderer, data[i].x, data[i].y);
+        }
+        if (useLocktexture) {
+            unsigned char *lockedPixels = nullptr;
+            int pitch = 0;
+            SDL_LockTexture(texture, nullptr,
+                            reinterpret_cast<void **>(&lockedPixels), &pitch);
+            std::copy_n(pixels.data(), pixels.size(), lockedPixels);
+            SDL_UnlockTexture(texture);
+        } else {
+            SDL_UpdateTexture(texture, nullptr, pixels.data(),
+                              CANVAS_WIDTH * 4);
+        }
+        SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+        SDL_RenderPresent(renderer);
     }
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
