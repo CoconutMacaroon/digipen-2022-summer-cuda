@@ -7,3 +7,8 @@ bin/main: src/main.cu src/main.h
 .PHONY:
 clean:
 	rm -rvf bin
+
+.PHONY:
+lint:
+	clang-format -i src/*
+

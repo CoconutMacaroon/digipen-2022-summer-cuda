@@ -4,14 +4,15 @@ __device__ double dot(const double x[3], const double y[3]) {
     return x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
 }
 
-
-__device__ void add(const double a[], const double b[], double *resultLocation) {
+__device__ void add(const double a[], const double b[],
+                    double *resultLocation) {
     resultLocation[0] = a[0] + b[0];
     resultLocation[1] = a[1] + b[1];
     resultLocation[2] = a[2] + b[2];
 }
 
-__device__ void subtract(const double a[], const double b[], double *resultLocation) {
+__device__ void subtract(const double a[], const double b[],
+                         double *resultLocation) {
     resultLocation[0] = a[0] - b[0];
     resultLocation[1] = a[1] - b[1];
     resultLocation[2] = a[2] - b[2];
@@ -24,8 +25,8 @@ __device__ void multiply(double a, const double b[], double *resultLocation) {
 }
 
 __device__ void canvasToViewport(int x, int y, double *returnLocation) {
-    returnLocation[0] = x * VIEWPORT_WIDTH / (double) CANVAS_WIDTH;
-    returnLocation[1] = y * VIEWPORT_HEIGHT / (double) CANVAS_HEIGHT;
+    returnLocation[0] = x * VIEWPORT_WIDTH / (double)CANVAS_WIDTH;
+    returnLocation[1] = y * VIEWPORT_HEIGHT / (double)CANVAS_HEIGHT;
     returnLocation[2] = D;
 }
 
@@ -40,7 +41,8 @@ __device__ void reflectRay(double R[], double N[], double *returnLocation) {
     subtract(dot_times_multiply, R, returnLocation);
 }
 
-__device__ void intersectRaySphere(double cameraPos[], double d[], Sphere sphere, double *returnLocation) {
+__device__ void intersectRaySphere(double cameraPos[], double d[],
+                                   Sphere sphere, double *returnLocation) {
     double CO[3];
     subtract(cameraPos, sphere.center, CO);
 
@@ -58,12 +60,12 @@ __device__ void intersectRaySphere(double cameraPos[], double d[], Sphere sphere
 
     double discriminantSqrt = sqrt(discriminant);
 
-    returnLocation[0] = (double) ((-b + discriminantSqrt) / (2 * a));
-    returnLocation[1] = (double) ((-b - discriminantSqrt) / (2 * a));
+    returnLocation[0] = (double)((-b + discriminantSqrt) / (2 * a));
+    returnLocation[1] = (double)((-b - discriminantSqrt) / (2 * a));
 }
 
-
-__device__ IntersectionData closestIntersection(double cameraPos[], double d[], double t_min, double t_max) {
+__device__ IntersectionData closestIntersection(double cameraPos[], double d[],
+                                                double t_min, double t_max) {
     double closest_t = DBL_MAX;
     Sphere closestSphere;
     bool isNull = true;
@@ -82,11 +84,14 @@ __device__ IntersectionData closestIntersection(double cameraPos[], double d[], 
             isNull = false;
         }
     }
-    IntersectionData data = {.sphere = closestSphere, .closest_t = closest_t, .isSphereNull = isNull};
+    IntersectionData data = {.sphere = closestSphere,
+                             .closest_t = closest_t,
+                             .isSphereNull = isNull};
     return data;
 }
 
-__device__ double computeLighting(double P[], double N[], double V[], double s) {
+__device__ double computeLighting(double P[], double N[], double V[],
+                                  double s) {
     double intensity = 0.0;
     for (size_t i = 0; i < ARR_LEN(lights); ++i) {
         if (lights[i].lightType == LIGHT_TYPE_AMBIENT) {
@@ -104,18 +109,18 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
                 t_max = DBL_MAX;
             }
             // shadow check
-            IntersectionData intersectionData = closestIntersection(P, L, 0.001f, t_max);
+            IntersectionData intersectionData =
+                closestIntersection(P, L, 0.001f, t_max);
 
             if (!intersectionData.isSphereNull)
                 continue;
 
-
             // diffuse
             double n_dot_l = dot(N, L);
 
-            if (n_dot_l > 0) {
-                intensity += lights[i].intensity * n_dot_l / (LENGTH(N) * LENGTH(L));
-            }
+            if (n_dot_l > 0)
+                intensity +=
+                    lights[i].intensity * n_dot_l / (LENGTH(N) * LENGTH(L));
 
             // specular
             if (s != -1) {
@@ -126,9 +131,9 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
 
                 double r_dot_v = dot(R, V);
 
-                if (r_dot_v > 0) {
-                    intensity += lights[i].intensity * pow(r_dot_v / (LENGTH(R) * LENGTH(V)), s);
-                }
+                if (r_dot_v > 0)
+                    intensity += lights[i].intensity *
+                                 pow(r_dot_v / (LENGTH(R) * LENGTH(V)), s);
             }
         }
     }
@@ -137,15 +142,20 @@ __device__ double computeLighting(double P[], double N[], double V[], double s) 
 
 __device__ const byte DEBUG = 0;
 
-__device__ Color traceRay(double cameraPos[3], double d[], double min_t, double max_t, int recursion_depth) {
-    if(DEBUG) printf("In trace ray\n");
-    IntersectionData intersectionData = closestIntersection(cameraPos, d, min_t, max_t);
+__device__ Color traceRay(double cameraPos[3], double d[], double min_t,
+                          double max_t, int recursion_depth) {
+    if (DEBUG)
+        printf("In trace ray\n");
+    IntersectionData intersectionData =
+        closestIntersection(cameraPos, d, min_t, max_t);
     if (intersectionData.isSphereNull) {
-        if (DEBUG) printf("This is background\n");
+        if (DEBUG)
+            printf("This is background\n");
 
         return BACKGROUND_COLOR;
     }
-    if (DEBUG) printf("This isn't background\n");
+    if (DEBUG)
+        printf("This isn't background\n");
 
     double tmp1[3];
     multiply(intersectionData.closest_t, d, tmp1);
@@ -161,15 +171,15 @@ __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double 
 
     double tmp3[3];
     multiply(-1.0, d, tmp3);
-    double lighting = computeLighting(P, N, tmp3, intersectionData.sphere.specular);
-    Color localColor = {ROUND_COLOR(intersectionData.sphere.color.r * lighting),
-                        ROUND_COLOR(intersectionData.sphere.color.g * lighting),
-                        ROUND_COLOR(intersectionData.sphere.color.b * lighting)};
-
+    double lighting =
+        computeLighting(P, N, tmp3, intersectionData.sphere.specular);
+    Color localColor = {
+        ROUND_COLOR(intersectionData.sphere.color.r * lighting),
+        ROUND_COLOR(intersectionData.sphere.color.g * lighting),
+        ROUND_COLOR(intersectionData.sphere.color.b * lighting)};
     double r = intersectionData.sphere.reflectiveness;
-    if (recursion_depth <= 0 || r <= 0) {
+    if (recursion_depth <= 0 || r <= 0)
         return localColor;
-    }
 
     double temp[3];
     multiply(-1.0, d, temp);
@@ -177,57 +187,103 @@ __device__ Color traceRay(double cameraPos[3], double d[], double min_t, double 
     reflectRay(temp, N2, R);
 
     Color reflectedColor = traceRay(P, R, 0.001, inf, recursion_depth - 1);
-    return (Color) {ROUND_COLOR(localColor.r * (1 - r) + reflectedColor.r * r),
-                    ROUND_COLOR(localColor.g * (1 - r) + reflectedColor.g * r),
-                    ROUND_COLOR(localColor.b * (1 - r) + reflectedColor.b * r)};
+    return (Color){ROUND_COLOR(localColor.r * (1 - r) + reflectedColor.r * r),
+                   ROUND_COLOR(localColor.g * (1 - r) + reflectedColor.g * r),
+                   ROUND_COLOR(localColor.b * (1 - r) + reflectedColor.b * r)};
 }
 
-__device__ void putPixel(int x, int y, Color color) {
+__device__ void putPixel(int x, int y, Color color,
+                         PixelRenderData *renderData) {
     x = CANVAS_WIDTH / 2 + x;
     y = CANVAS_HEIGHT / 2 - y - 1;
     // TODO: can we check this BEFORE we do the rendering so we
     // don't render if the result would get discarded anyways
     if (x < 0 || x >= CANVAS_WIDTH || y < 0 || y >= CANVAS_HEIGHT) {
-        //printf("[%d, %d] [%d, %d, %d]\n", x, y, color.r, color.g, color.b);
+        // printf("[%d, %d] [%d, %d, %d]\n", x, y, color.r, color.g, color.b);
         return;
     }
+    renderData[CANVAS_WIDTH * x + y].x = x;
+    renderData[CANVAS_WIDTH * x + y].y = y;
 
-    printf("%d %d %d %d %d\n", x, y, color.r, color.g, color.b);
+    renderData[CANVAS_WIDTH * x + y].r = color.r;
+    renderData[CANVAS_WIDTH * x + y].g = color.g;
+    renderData[CANVAS_WIDTH * x + y].b = color.b;
+
+    // printf("%d %d %d %d %d\n", x, y, color.r, color.g, color.b);
 }
 
-__device__ void renderPixel(int x, int y) {
-    if(DEBUG)printf("Entered renderPixel\n");
+__device__ void renderPixel(int x, int y, PixelRenderData *data) {
+    if (DEBUG)
+        printf("Entered renderPixel\n");
     double d[3];
     canvasToViewport(x, y, d);
-    if(DEBUG)printf("Canvas to viewport worked\n");
-    Color color = traceRay(cameraPosition, d, 1, inf, RECURSION_DEPTH_FOR_REFLECTIONS);
-    if(DEBUG)printf("Trace ray worked\n");
-    putPixel(x, y, color);
-    if(DEBUG)printf("putPixel worked, exiting renderPixel\n");
-
+    if (DEBUG)
+        printf("Canvas to viewport worked\n");
+    Color color =
+        traceRay(cameraPosition, d, 1, inf, RECURSION_DEPTH_FOR_REFLECTIONS);
+    if (DEBUG)
+        printf("Trace ray worked\n");
+    putPixel(x, y, color, data);
+    if (DEBUG)
+        printf("putPixel worked, exiting renderPixel\n");
 }
 
-__global__ void launch(Pixel *pixels, int numPixels) {
-    for (int i = 0; i < numPixels; ++i) {
-        renderPixel(pixels[i].x, pixels[i].y);
-    }
+__global__ void launch(Pixel *pixels, int numPixels,
+                       PixelRenderData *renderData) {
+    for (int i = 0; i < numPixels; ++i)
+        renderPixel(pixels[i].x, pixels[i].y, renderData);
 }
 
 int main() {
     Pixel *pixelsToRender;
-
-    cudaMallocManaged(&pixelsToRender, CANVAS_WIDTH * CANVAS_HEIGHT * 4 * sizeof(Pixel));
-
+    cudaMallocManaged(&pixelsToRender,
+                      CANVAS_WIDTH * CANVAS_HEIGHT * 4 * sizeof(Pixel));
 
     int counter = 0;
     for (short x = -CANVAS_WIDTH; x < CANVAS_WIDTH; ++x)
         for (short y = -CANVAS_HEIGHT; y < CANVAS_HEIGHT; ++y)
-            pixelsToRender[counter++] = (Pixel) {.x = x, .y = y};
+            pixelsToRender[counter++] = (Pixel){.x = x, .y = y};
 
+    /////////////////////////////////////////////
 
-    if(DEBUG) printf("Counter: %d\n", counter);
+    // boring setup
+    SDL_Event event;
+    SDL_Renderer *renderer;
+    SDL_Window *window;
 
-    launch<<<1, 1>>>(pixelsToRender, counter);
+    SDL_Init(SDL_INIT_VIDEO);
+    SDL_CreateWindowAndRenderer(CANVAS_WIDTH, CANVAS_HEIGHT, 0, &window,
+                                &renderer);
+    SDL_SetWindowTitle(window, "CUDA Raytracer");
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+    SDL_RenderClear(renderer);
+
+    // create a pixel buffer for CUDA
+    PixelRenderData *data;
+    cudaMallocManaged(&data,
+                      sizeof(PixelRenderData) * CANVAS_WIDTH * CANVAS_HEIGHT);
+
+    launch<<<1, 1>>>(pixelsToRender, counter, data);
     cudaDeviceSynchronize();
-    return 0;
+    if (DEBUG)
+        printf("Counter: %d\n", counter);
+
+    // render the buffer
+    for (int i = 0; i < CANVAS_WIDTH * CANVAS_HEIGHT; i++) {
+        SDL_SetRenderDrawColor(renderer, data[i].r, data[i].g, data[i].b,
+                               SDL_ALPHA_OPAQUE);
+        SDL_RenderDrawPoint(renderer, data[i].x, data[i].y);
+    }
+    SDL_RenderPresent(renderer);
+
+    // if the user wants to close the window, close it and do a bit of cleanup
+    while (1) {
+        if (SDL_PollEvent(&event) && event.type == SDL_QUIT)
+            break;
+    }
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    cudaFree(pixelsToRender);
+    return EXIT_SUCCESS;
 }
