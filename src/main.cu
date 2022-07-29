@@ -191,6 +191,8 @@ __device__ void putPixel(int x, int y, Color color,
     if (x < 0 || x >= CANVAS_WIDTH || y < 0 || y >= CANVAS_HEIGHT) {
         return;
     }
+
+    // array mapping code from https://stackoverflow.com/a/2151141
     renderData[CANVAS_WIDTH * x + y].x = x;
     renderData[CANVAS_WIDTH * x + y].y = y;
 
@@ -217,6 +219,7 @@ __global__ void launch(Pixel *pixels, int numPixels,
 }
 
 int main() {
+    // this contains the coords of all the pixels that need to be rendered
     Pixel *pixelsToRender;
     cudaMallocManaged(&pixelsToRender,
                       CANVAS_WIDTH * CANVAS_HEIGHT * 4 * sizeof(Pixel));
@@ -226,10 +229,9 @@ int main() {
         for (short y = -CANVAS_HEIGHT; y < CANVAS_HEIGHT; ++y)
             pixelsToRender[counter++] = (Pixel){.x = x, .y = y};
 
-    /////////////////////////////////////////////
-
+    // setup SDL
     SDL_Init(SDL_INIT_EVERYTHING);
-    SDL_Window *window = SDL_CreateWindow("SDL", SDL_WINDOWPOS_UNDEFINED,
+    SDL_Window *window = SDL_CreateWindow("CUDA Raytracer", SDL_WINDOWPOS_UNDEFINED,
                                           SDL_WINDOWPOS_UNDEFINED, CANVAS_WIDTH,
                                           CANVAS_HEIGHT, SDL_WINDOW_SHOWN);
     SDL_Renderer *renderer =
@@ -241,7 +243,7 @@ int main() {
                                              CANVAS_WIDTH, CANVAS_HEIGHT);
     std::vector<unsigned char> pixels(CANVAS_WIDTH * CANVAS_HEIGHT * 4, 0);
 
-    bool useLocktexture = false;
+    bool useLockTexture = false;
 
     bool running = true;
 
@@ -252,22 +254,8 @@ int main() {
 
     launch<<<1, 256>>>(pixelsToRender, counter, data);
     cudaDeviceSynchronize();
-    /*
-        // render the buffer
-        for (int i = 0; i < CANVAS_WIDTH * CANVAS_HEIGHT; i++) {
-            SDL_SetRenderDrawColor(renderer, data[i].r, data[i].g, data[i].b,
-                                   SDL_ALPHA_OPAQUE);
-            SDL_RenderDrawPoint(renderer, data[i].x, data[i].y);
-        }
-        SDL_RenderPresent(renderer);
 
-        // if the user wants to close the window, close it and do a bit of
-       cleanup while (1) { if (SDL_PollEvent(&event) && event.type == SDL_QUIT)
-                break;
-        }
-        SDL_DestroyRenderer(renderer);
-        SDL_DestroyWindow(window);
-        SDL_Quit();*/
+    // fast SDL2 rendering code from https://stackoverflow.com/a/33312056
     while (running) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
         SDL_RenderClear(renderer);
@@ -284,7 +272,7 @@ int main() {
 
             if (SDL_KEYDOWN == ev.type &&
                 SDL_SCANCODE_L == ev.key.keysym.scancode) {
-                useLocktexture = !useLocktexture;
+                useLockTexture = !useLockTexture;
             }
         }
 
@@ -301,7 +289,7 @@ int main() {
                                    SDL_ALPHA_OPAQUE);
             SDL_RenderDrawPoint(renderer, data[i].x, data[i].y);
         }
-        if (useLocktexture) {
+        if (useLockTexture) {
             unsigned char *lockedPixels = nullptr;
             int pitch = 0;
             SDL_LockTexture(texture, nullptr,
