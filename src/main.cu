@@ -232,12 +232,17 @@ __global__ void launch(Pixel *pixels,
     for (int i = index; i < counter; i += stride)
         renderPixel(pixels[i].x, pixels[i].y, renderData);
 }
-
+__global__ void updateCameraPosition() { cameraPosition[2] -= 0.05; }
 int main() {
     // this contains the coords of all the pixels that need to be rendered
     Pixel *pixelsToRender;
     cudaMallocManaged(&pixelsToRender,
                       CANVAS_WIDTH * CANVAS_HEIGHT * 4 * sizeof(Pixel));
+
+    // create a pixel buffer for CUDA
+    PixelRenderData *data;
+    cudaMallocManaged(&data,
+                      sizeof(PixelRenderData) * CANVAS_WIDTH * CANVAS_HEIGHT);
 
     // setup SDL
     SDL_Init(SDL_INIT_EVERYTHING);
@@ -262,14 +267,6 @@ int main() {
 
     bool running = true;
 
-    // create a pixel buffer for CUDA
-    PixelRenderData *data;
-    cudaMallocManaged(&data,
-                      sizeof(PixelRenderData) * CANVAS_WIDTH * CANVAS_HEIGHT);
-
-    launch<<<1, 256>>>(pixelsToRender, data, CANVAS_WIDTH, CANVAS_HEIGHT);
-    cudaDeviceSynchronize();
-
     // fast SDL2 rendering code from https://stackoverflow.com/a/33312056
     while (running) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
@@ -290,6 +287,10 @@ int main() {
                 useLockTexture = !useLockTexture;
             }
         }
+
+        launch<<<1, 256>>>(pixelsToRender, data, CANVAS_WIDTH, CANVAS_HEIGHT);
+        updateCameraPosition<<<1, 1>>>();
+        cudaDeviceSynchronize();
 
         for (int i = 0; i < CANVAS_WIDTH * CANVAS_HEIGHT; i++) {
             const unsigned int offset =
