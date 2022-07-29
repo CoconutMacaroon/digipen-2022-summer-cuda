@@ -48,8 +48,8 @@ typedef struct Light {
 
 __device__ Color BACKGROUND_COLOR = {0, 0, 0};
 
-const short CANVAS_WIDTH = 512;
-const short CANVAS_HEIGHT = 512;
+const short CANVAS_WIDTH = 1024;
+const short CANVAS_HEIGHT = 1024;
 
 __device__ double D = 1;
 // TODO: I may need to swap CANVAS_WIDTH and CANVAS_HEIGHT
