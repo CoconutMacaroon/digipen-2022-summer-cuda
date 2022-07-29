@@ -319,7 +319,6 @@ int main() {
         }
         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
         SDL_RenderPresent(renderer);
-        break;
     }
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
